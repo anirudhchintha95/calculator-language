@@ -346,15 +346,53 @@ class Interpreter(object):
     
 
 class StatementEvaluator(object):
-    pass
-
+    def __init__(self, statements, variables):
+        self.statements = statements
+        self.variables = variables
+    def evaluate(self):
+        for statement in self.statements:
+            if statement.startswith("print "):
+                linestatement = statement[6: ].strip()
+                parsed_statement = Parsor(linestatement).execute()
+                val = Interpreter(parsed_statement, self.variables)
+                result = val.execute()
+                return result
+            else:
+                statement = statement.replace(' ', '')
+                calculate = statement.split('=')
+                variable = calculate[0]
+                expression = calculate[1]
+                try:
+                    parsed_statement = Parsor(expression).execute()
+                    val = Interpreter(parsed_statement, self.variables)
+                    result = val.execute()
+                except NameError:
+                    return "NameError"
+                self.variables[variable] = result
+        pass
 
 if __name__ == '__main__':
-    statements = []
-    for line in sys.stdin:
-        if line:
-            statements.append(line.strip())
+    # statements = ['x + y * z', 'x / y * z', 'x / y * z', '(x + y) * z + 5', '(x + y) * (z + 5)', '(x + y) * (z - 5)']
+    # variables = {'x': 6, 'y': 2, 'z': 3}
+    # statements = []
+    # for line in sys.stdin:
+    #     if not line:
+    #         break
+    #     else:
+    #         statements.append(line.strip())
 
-    for statement in statements:
-        # TODO: Evaluate the statement and then pass to the interpreter
-        pass
+    # statements, variables = StatementEvaluator(statements, {}).evaluate()
+    # for statement in statements:
+    #     parsed_statement = Parsor(statement).execute()
+    #     interpreter = Interpreter(parsed_statement, variables)
+    #     result = interpreter.execute()
+    #     print(f"Statement: {statement}\nResult: {result}\n")
+    lines = ""
+    while True:
+        line = input()
+        if line:
+            lines += line + '\n'
+        else:
+            break
+    result = StatementEvaluator(lines.split('\n'), {})
+    print(result.evaluate())
