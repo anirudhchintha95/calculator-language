@@ -355,7 +355,7 @@ class StatementEvaluator(object):
     def evaluate(self):
         for statement in self.statements:
             if len(statement.split(' ')) == 1 or '++' not in statement or '--' not in statement:
-                self.variables[statement] = None
+                self.variables[statement] = float(0)
             elif statement.startswith("print "):
                 linestatement = statement[6: ].strip()
                 linestatement = linestatement.split(',')
@@ -395,14 +395,11 @@ if __name__ == '__main__':
     #     interpreter = Interpreter(parsed_statement, variables)
     #     result = interpreter.execute()
     #     print(f"Statement: {statement}\nResult: {result}\n")
-    lines = ""
-    while True:
-        line = input()
+    statements = []
+    for line in sys.stdin:
         if line:
-            lines += line + '\n'
-        else:
-            break
-    result = StatementEvaluator(lines.split('\n')).evaluate()
+            statements.append(line.strip())
+    result = StatementEvaluator(statements).evaluate()
     try:
         for i in result:
             print(i)
