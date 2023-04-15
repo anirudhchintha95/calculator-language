@@ -5,11 +5,11 @@ import sys
 single_len_symbols = ["-", "+", "*", "/", "%", "^", "!", "(", ")", "<", ">"]
 double_len_symbols = ["||", "&&", "++", "--", "==", "!=", "<=", ">="]
 
-disj_symbols = ["+", "-", "||"]
-conj_symbols = ["*", "/", "%", "&&"]
+disj_symbols = ["+", "-"]
+conj_symbols = ["*", "/", "%"]
 power_conj_symbols = ["^"]
-neg_symbols = ["!", "-"]
-other_symbols = ["--", "++"]
+neg_symbols = ["-"]
+incr_or_decr_symbols = ["--", "++"]
 
 
 class token():
@@ -86,6 +86,20 @@ class Lexer(object):
         self.i += 1
 
     def evaluate_double_symbol(self):
+        if (self.s[self.i:self.i+2] == '++' or self.s[self.i:self.i+2] == '--'):
+            symbol = self.s[self.i:self.i+2]
+            if self.tokens and self.tokens[-1].typ == 'var':
+                # If the previous token is a variable, this is a post-sym operator
+                self.tokens.append(token('sym', symbol))
+                self.i += 2
+            elif not self.tokens or self.tokens[-1].val in single_len_symbols or self.tokens[-1].val in double_len_symbols:
+                # If the previous token is a symbol or there is no previous token, this is a pre-sym operator
+                self.tokens.append(token('sym', symbol))
+                self.i += 2
+            else:
+                # Otherwise, this is a regular single length symbol
+                self.evaluate_symbol()
+            return
         self.tokens.append(token('sym', self.s[self.i:self.i+2]))
         self.i += 2
 
@@ -93,6 +107,7 @@ class Lexer(object):
 class ast():
     typ: str
     children: tuple[Any, ...]
+    post_op: Any
 
     def __init__(self, typ: str, *children: Any):
         """
@@ -102,9 +117,13 @@ class ast():
         """
         self.typ = typ
         self.children = children
+        self.post_op = None
 
     def __repr__(self):
         return f'ast({self.typ!r}, {", ".join([repr(c) for c in self.children])})'
+    
+    def add_post_op(self, post_op: Any):
+        self.post_op = post_op
 
 
 class Parsor(object):
@@ -144,9 +163,11 @@ class Parsor(object):
         >>> Parsor('true && false').execute()
         ast('&&', ast('bool', True), ast('bool', False))
         >>> Parsor('!x && (a && !false)').execute()
-        ast('&&', ast('!', ast('var', 'x')), ast('&&', ast('var', 'a'), ast('!', ast('bool', False))))
+        ast('&&', ast('!', ast('var', 'x')), ast(
+            '&&', ast('var', 'a'), ast('!', ast('bool', False))))
         >>> Parsor('!x && a && !false').execute()
-        ast('&&', ast('&&', ast('!', ast('var', 'x')), ast('var', 'a')), ast('!', ast('bool', False)))
+        ast('&&', ast('&&', ast('!', ast('var', 'x')), ast(
+            'var', 'a')), ast('!', ast('bool', False)))
         """
         if i >= len(self.ts):
             raise SyntaxError('expected conjunction, found EOF')
@@ -194,31 +215,32 @@ class Parsor(object):
             a, i = self.neg(i+1)
             return ast(val, a), i
         else:
-            # return self.incr_and_decr(i)
-            return self.atom(i)
-
-    # TODO: Fix this
+            return self.incr_and_decr(i)
 
     def incr_and_decr(self, i: int) -> tuple[ast, int]:
-        pass
-    #     """
-    #     >>> Parsor('++x').execute()
-    #     ast('++', ast('var', 'x'))
-    #     >>> Parsor('x++').execute()
-    #     ast('++', ast('var', 'x'))
-    #     >>> Parsor('++x++').execute()
-    #     ast('++', ast('++', ast('var', 'x')))
-    #     """
+        # pre and post incr and decr implemented
+        # They are non-associative
 
-    #     if i >= len(self.ts):
-    #         raise SyntaxError('expected increment, found EOF')
+        if i >= len(self.ts):
+            raise SyntaxError('expected incr/decr, found EOF')
 
-    #     if self.ts[i].typ == 'sym' and self.ts[i].val in other_symbols:
-    #         val = self.ts[i].val
-    #         a, i = self.incr_and_decr(i+1)
-    #         return ast(val, a), i
-    #     else:
-    #         return self.atom(i)
+        if self.ts[i].typ == 'sym' and self.ts[i].val in incr_or_decr_symbols:
+            val = self.ts[i].val
+            if self.ts[i+1].typ != 'var':
+                raise SyntaxError(
+                    f'expected variable, found {self.ts[i+1].typ}'
+                )
+            a, i = self.atom(i+1)
+            return ast(val, a), i
+
+        if self.ts[i].typ == 'var' and i+1 < len(self.ts) and self.ts[i+1].typ == 'sym' and self.ts[i+1].val in incr_or_decr_symbols:
+            op = self.ts[i+1].val
+            var = self.ts[i].val
+            ast_node = ast('var', var)
+            ast_node.add_post_op(ast(op, ast('var', var)))
+            return ast_node, i+2
+
+        return self.atom(i)
 
     def atom(self, i: int) -> tuple[ast, int]:
         """
@@ -264,7 +286,7 @@ class Interpreter(object):
     >>> Interpreter(Parsor('x / y * z').execute(), {'z': 3, 'x': 6}).execute()
     Traceback (most recent call last):
     ...
-    ZeroDivisionError: division by zero
+    ZeroDivisionError: divide by zero
     >>> Interpreter(Parsor('(x + y) * z + 5').execute(), {'x': 6, 'y': 2, 'z': 3}).execute()
     29.0
     >>> Interpreter(Parsor('(x + y) * (z + 5)').execute(), {'x': 6, 'y': 2, 'z': 3}).execute()
@@ -300,13 +322,19 @@ class Interpreter(object):
             return self.interp_and()
         elif self.a.typ == '||':
             return self.interp_or()
-
-        # TODO: Handle other operations ++, --, etc.
+        elif self.a.typ in ['--', '++']:
+            return self.interp_incr_or_decr()
 
         raise SyntaxError(f'unknown operation {self.a.typ}')
 
     def interp_var(self):
-        return self.variables[self.a.children[0]] if self.a.children[0] in self.variables else float(0)
+        if self.a.children[0] not in self.variables:
+            self.variables[self.a.children[0]] = float(0)
+
+        value = self.variables[self.a.children[0]]
+        if self.a.post_op:
+            Interpreter(self.a.post_op, self.variables).execute()
+        return value
 
     def interp_plus(self):
         return Interpreter(self.a.children[0], self.variables).execute() + Interpreter(self.a.children[1], self.variables).execute()
@@ -323,13 +351,13 @@ class Interpreter(object):
     def interp_divide(self):
         right = Interpreter(self.a.children[1], self.variables).execute()
         if right in [0, None, 0.0]:
-            raise ZeroDivisionError('division by zero')
+            raise ZeroDivisionError('divide by zero')
         return Interpreter(self.a.children[0], self.variables).execute() / right
 
     def interp_mod(self):
         right = Interpreter(self.a.children[1], self.variables).execute()
         if right in [0, None, 0.0]:
-            raise ZeroDivisionError('division by zero')
+            raise ZeroDivisionError('divide by zero')
         return Interpreter(self.a.children[0], self.variables).execute() % right
 
     def interp_pow(self):
@@ -344,8 +372,28 @@ class Interpreter(object):
     def interp_or(self):
         return Interpreter(self.a.children[0], self.variables).execute() or Interpreter(self.a.children[1], self.variables).execute()
 
-    def interp_incr_decr(self):
-        pass
+    def interp_incr_or_decr(self):
+        if len(self.a.children) != 1:
+            raise SyntaxError(f'expected 1 child, got {len(self.a.children)}')
+
+        if self.a.children[0].typ != 'var':
+            raise SyntaxError(
+                f'expected variable, got {self.a.children[0].typ}'
+            )
+
+        variable = self.a.children[0].children[0]
+
+        if variable not in self.variables:
+            self.variables[variable] = float(0)
+
+        if self.a.typ == '++':
+            self.variables[variable] += 1
+        elif self.a.typ == '--':
+            self.variables[variable] -= 1
+        else:
+            raise SyntaxError(f'unknown operation {self.a.children[1]}')
+
+        return self.variables[variable]
 
 
 class StatementEvaluator(object):
@@ -359,14 +407,14 @@ class StatementEvaluator(object):
     def execute(self):
         try:
             self.parse()
-        except SyntaxError:
+        except (SyntaxError, ValueError):
             print("parse error")
             return
 
         try:
             self.evaluate()
         except ZeroDivisionError:
-            print(*(self.printlist + ["division by zero"]))
+            print(*(self.printlist + ["divide by zero"]))
             return
 
     def parse(self):
@@ -415,7 +463,7 @@ class StatementEvaluator(object):
         if has_comment:
             self.parse_statement(statement.split('#')[0])
             return
-        
+
         if '*/' in statement and not self.in_block_comment:
             raise SyntaxError("parse error")
 
@@ -442,45 +490,41 @@ class StatementEvaluator(object):
         statement = statement.strip().replace(' ', '')
 
         if '+=' in statement:
-          calculate = statement.split('+=')
-          variable = calculate[0]
-          expression = f'{variable}+{calculate[1]}'
-          self.parse_equate(expression, variable)
+            calculate = statement.split('+=')
+            variable = calculate[0]
+            expression = f'{variable}+{calculate[1]}'
+            self.parse_equate(expression, variable)
         elif '-=' in statement:
-          calculate = statement.split('-=')
-          variable = calculate[0]
-          expression = f'{variable}-{calculate[1]}'
-          self.parse_equate(expression, variable)
+            calculate = statement.split('-=')
+            variable = calculate[0]
+            expression = f'{variable}-{calculate[1]}'
+            self.parse_equate(expression, variable)
         elif '*=' in statement:
-          calculate = statement.split('*=')
-          variable = calculate[0]
-          expression = f'{variable}*{calculate[1]}'
-          self.parse_equate(expression, variable)
+            calculate = statement.split('*=')
+            variable = calculate[0]
+            expression = f'{variable}*{calculate[1]}'
+            self.parse_equate(expression, variable)
         elif '/=' in statement:
-          calculate = statement.split('/=')
-          variable = calculate[0]
-          expression = f'{variable}/{calculate[1]}'
-          self.parse_equate(expression, variable)
+            calculate = statement.split('/=')
+            variable = calculate[0]
+            expression = f'{variable}/{calculate[1]}'
+            self.parse_equate(expression, variable)
         elif '%=' in statement:
-          calculate = statement.split('%=')
-          variable = calculate[0]
-          expression = f'{variable}%{calculate[1]}'
-          self.parse_equate(expression, variable)
+            calculate = statement.split('%=')
+            variable = calculate[0]
+            expression = f'{variable}%{calculate[1]}'
+            self.parse_equate(expression, variable)
         elif '^=' in statement:
-          calculate = statement.split('^=')
-          variable = calculate[0]
-          expression = f'{variable}^{calculate[1]}'
-          self.parse_equate(expression, variable)
+            calculate = statement.split('^=')
+            variable = calculate[0]
+            expression = f'{variable}^{calculate[1]}'
+            self.parse_equate(expression, variable)
         elif '=' in statement:
             calculate = statement.split('=')
             variable = calculate[0]
             expression = calculate[1]
             self.parse_equate(expression, variable)
-        elif '++' in statement:
-            return
-        elif '--' in statement:
-            return
-        elif any([i in statement for i in single_len_symbols]) or any([i in statement for i in single_len_symbols]):
+        elif any([i in statement for i in single_len_symbols]) or any([i in statement for i in double_len_symbols]):
             self.parsed_statements.append({
                 'type': 'eval',
                 'value': Parsor(statement).execute()
@@ -493,15 +537,15 @@ class StatementEvaluator(object):
             })
 
     def parse_equate(self, expression, variable):
-      if not expression or not variable:
-                raise SyntaxError('parse error')
+        if not expression or not variable:
+            raise SyntaxError('parse error')
 
-      parsed_expression = Parsor(expression).execute()
-      self.parsed_statements.append({
-          'type': 'assign',
-          'variable': variable,
-          'value': parsed_expression
-      })
+        parsed_expression = Parsor(expression).execute()
+        self.parsed_statements.append({
+            'type': 'assign',
+            'variable': variable,
+            'value': parsed_expression
+        })
 
     def evaluate(self):
         if not self.parsed_statements:
@@ -523,10 +567,12 @@ class StatementEvaluator(object):
                         self.printlist.append(result)
                 print(*self.printlist, sep=' ')
                 self.printlist = []
-            elif type == 'eval':
-                Interpreter(statement['value'], self.variables).execute()
             elif statement['type'] == 'assign':
                 self.variables[statement['variable']] = Interpreter(
+                    statement['value'], self.variables
+                ).execute()
+            else:
+                Interpreter(
                     statement['value'], self.variables
                 ).execute()
 
