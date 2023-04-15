@@ -443,30 +443,40 @@ class StatementEvaluator(object):
 
         # TODO: Fill these up
         if '+=' in statement:
-            return
+          calculate = statement.split('+=')
+          variable = calculate[0]
+          expression = f'{variable}+{calculate[1]}'
+          self.Parse_evaluate(expression, variable)
         elif '-=' in statement:
-            return
+          calculate = statement.split('-=')
+          variable = calculate[0]
+          expression = f'{variable}-{calculate[1]}'
+          self.Parse_evaluate(expression, variable)
         elif '*=' in statement:
-            return
+          calculate = statement.split('*=')
+          variable = calculate[0]
+          expression = f'{variable}*{calculate[1]}'
+          self.Parse_evaluate(expression, variable)
         elif '/=' in statement:
-            return
+          calculate = statement.split('/=')
+          variable = calculate[0]
+          expression = f'{variable}/{calculate[1]}'
+          self.Parse_evaluate(expression, variable)
         elif '%=' in statement:
-            return
+          calculate = statement.split('%=')
+          variable = calculate[0]
+          expression = f'{variable}%{calculate[1]}'
+          self.Parse_evaluate(expression, variable)
         elif '^=' in statement:
-            return
+          calculate = statement.split('^=')
+          variable = calculate[0]
+          expression = f'{variable}^{calculate[1]}'
+          self.Parse_evaluate(expression, variable)
         elif '=' in statement:
             calculate = statement.split('=')
             variable = calculate[0]
             expression = calculate[1]
-            if not expression or not variable:
-                raise SyntaxError('parse error')
-
-            parsed_expression = Parsor(expression).execute()
-            self.parsed_statements.append({
-                'type': 'assign',
-                'variable': variable,
-                'value': parsed_expression
-            })
+            self.Parse_evaluate(expression, variable)
         elif '++' in statement:
             return
         elif '--' in statement:
@@ -482,6 +492,17 @@ class StatementEvaluator(object):
                 'variable': statement,
                 'value': Parsor('0').execute()
             })
+
+    def Parse_evaluate(self, expression, variable):
+      if not expression or not variable:
+                raise SyntaxError('parse error')
+
+      parsed_expression = Parsor(expression).execute()
+      self.parsed_statements.append({
+          'type': 'assign',
+          'variable': variable,
+          'value': parsed_expression
+      })
 
     def evaluate(self):
         if not self.parsed_statements:
@@ -512,6 +533,14 @@ class StatementEvaluator(object):
 
 
 if __name__ == '__main__':
+    # lines = ""
+    # while True:
+    #     line = input()
+    #     if line:
+    #         lines += line + '\n'
+    #     else:
+    #         break
+    # StatementEvaluator(lines.split('\n')).execute()
     statements = []
     for line in sys.stdin:
         if line:
