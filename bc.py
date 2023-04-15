@@ -344,19 +344,27 @@ class Interpreter(object):
     def interp_or(self):
         return Interpreter(self.a.children[0], self.variables).execute() or Interpreter(self.a.children[1], self.variables).execute()
     
+    def interp_incr_decr(self):
+        pass
 
 class StatementEvaluator(object):
-    def __init__(self, statements, variables):
+    def __init__(self, statements):
         self.statements = statements
-        self.variables = variables
+        self.variables = {}
+        self.printlist = []
     def evaluate(self):
         for statement in self.statements:
-            if statement.startswith("print "):
+            if len(statement.split(' ')) == 1 or '++' not in statement or '--' not in statement:
+                self.variables[statement] = None
+            elif statement.startswith("print "):
                 linestatement = statement[6: ].strip()
-                parsed_statement = Parsor(linestatement).execute()
-                val = Interpreter(parsed_statement, self.variables)
-                result = val.execute()
-                return result
+                linestatement = linestatement.split(',')
+                for i in linestatement:
+                    parsed_statement = Parsor(i).execute()
+                    val = Interpreter(parsed_statement, self.variables)
+                    result = val.execute()
+                    self.printlist.append(result)
+                return self.printlist
             else:
                 statement = statement.replace(' ', '')
                 calculate = statement.split('=')
@@ -394,5 +402,9 @@ if __name__ == '__main__':
             lines += line + '\n'
         else:
             break
-    result = StatementEvaluator(lines.split('\n'), {})
-    print(result.evaluate())
+    result = StatementEvaluator(lines.split('\n')).evaluate()
+    try:
+        for i in result:
+            print(i)
+    except TypeError:
+        print(None)
