@@ -1,4 +1,5 @@
 from typing import Any
+import re
 import sys
 
 
@@ -92,7 +93,7 @@ class Lexer(object):
                 # If the previous token is a variable, this is a post-sym operator
                 self.tokens.append(token('sym', symbol))
                 self.i += 2
-            elif not self.tokens or self.tokens[-1].val in single_len_symbols or self.tokens[-1].val in double_len_symbols:
+            elif not self.tokens or self.tokens[-1].val in single_len_symbols or (self.tokens[-1].val in double_len_symbols and self.tokens[-1].val != '++' and self.tokens[-1].val != '--'):
                 # If the previous token is a symbol or there is no previous token, this is a pre-sym operator
                 self.tokens.append(token('sym', symbol))
                 self.i += 2
@@ -121,7 +122,7 @@ class ast():
 
     def __repr__(self):
         return f'ast({self.typ!r}, {", ".join([repr(c) for c in self.children])})'
-    
+
     def add_post_op(self, post_op: Any):
         self.post_op = post_op
 
@@ -530,6 +531,7 @@ class StatementEvaluator(object):
                 'value': Parsor(statement).execute()
             })
         else:
+            # self.check_var_name_validity(statement)
             self.parsed_statements.append({
                 'type': 'assign',
                 'variable': statement,
@@ -539,6 +541,8 @@ class StatementEvaluator(object):
     def parse_equate(self, expression, variable):
         if not expression or not variable:
             raise SyntaxError('parse error')
+        
+        self.check_var_name_validity(variable)
 
         parsed_expression = Parsor(expression).execute()
         self.parsed_statements.append({
@@ -575,6 +579,10 @@ class StatementEvaluator(object):
                 Interpreter(
                     statement['value'], self.variables
                 ).execute()
+
+    def check_var_name_validity(self, name):
+        if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name) is None:
+                raise SyntaxError('parse error')
 
 
 if __name__ == '__main__':
