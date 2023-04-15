@@ -343,65 +343,177 @@ class Interpreter(object):
 
     def interp_or(self):
         return Interpreter(self.a.children[0], self.variables).execute() or Interpreter(self.a.children[1], self.variables).execute()
-    
+
     def interp_incr_decr(self):
         pass
+
 
 class StatementEvaluator(object):
     def __init__(self, statements):
         self.statements = statements
         self.variables = {}
+        self.parsed_statements = []
         self.printlist = []
-    def evaluate(self):
+        self.in_block_comment = False
+
+    def execute(self):
+        try:
+            self.parse()
+        except SyntaxError:
+            print("parse error")
+            return
+
+        try:
+            self.evaluate()
+        except ZeroDivisionError:
+            print(*(self.printlist + ["division by zero"]))
+            return
+
+    def parse(self):
         for statement in self.statements:
-            if len(statement.split(' ')) == 1 or '++' not in statement or '--' not in statement:
-                self.variables[statement] = float(0)
-            elif statement.startswith("print "):
-                linestatement = statement[6: ].strip()
-                linestatement = linestatement.split(',')
-                for i in linestatement:
-                    parsed_statement = Parsor(i).execute()
-                    val = Interpreter(parsed_statement, self.variables)
-                    result = val.execute()
-                    self.printlist.append(result)
-                return self.printlist
+            self.parse_statement(statement)
+
+    def parse_statement(self, statement):
+        if self.in_block_comment:
+            if '*/' in statement:
+                self.in_block_comment = False
+                self.parse_statement(statement.split('*/')[1])
+                return
+
+        if self.in_block_comment:
+            return
+
+        if not statement:
+            return
+
+        has_comment = '#' in statement
+        has_block_comment = '/*' in statement
+
+        if has_comment and has_block_comment:
+            comment_indexes = (statement.index('/*'), statement.index('#'))
+            if comment_indexes[0] < comment_indexes[1]:
+                self.in_block_comment = True
+                self.parse_statement(statement.split('/*')[0])
+                statement = statement.split('/*')[1]
+                if '*/' in statement:
+                    self.in_block_comment = False
+                    self.parse_statement(statement.split('*/')[1])
             else:
-                statement = statement.replace(' ', '')
-                calculate = statement.split('=')
-                variable = calculate[0]
-                expression = calculate[1]
-                try:
-                    parsed_statement = Parsor(expression).execute()
-                    val = Interpreter(parsed_statement, self.variables)
-                    result = val.execute()
-                except NameError:
-                    return "NameError"
-                self.variables[variable] = result
-        pass
+                self.parse_statement(statement.split('#')[0])
+            return
+
+        if has_block_comment:
+            self.in_block_comment = True
+            self.parse_statement(statement.split('/*')[0])
+            statement = statement.split('/*')[1]
+            if '*/' in statement:
+                self.in_block_comment = False
+                self.parse_statement(statement.split('*/')[1])
+                return
+            return
+
+        if has_comment:
+            self.parse_statement(statement.split('#')[0])
+            return
+        
+        if '*/' in statement and not self.in_block_comment:
+            raise SyntaxError("parse error")
+
+        statement = statement.strip()
+        if not statement:
+            return
+
+        if statement.startswith("print "):
+            linestatement = statement[6:].strip().replace(' ', '')
+            linestatement = linestatement.split(',')
+            if not linestatement:
+                self.parsed_statements.append({
+                    'type': 'print',
+                    'value': []
+                })
+            else:
+                printlist = [Parsor(i).execute() for i in linestatement]
+                self.parsed_statements.append({
+                    'type': 'print',
+                    'value': printlist
+                })
+            return
+
+        statement = statement.strip().replace(' ', '')
+
+        # TODO: Fill these up
+        if '+=' in statement:
+            return
+        elif '-=' in statement:
+            return
+        elif '*=' in statement:
+            return
+        elif '/=' in statement:
+            return
+        elif '%=' in statement:
+            return
+        elif '^=' in statement:
+            return
+        elif '=' in statement:
+            calculate = statement.split('=')
+            variable = calculate[0]
+            expression = calculate[1]
+            if not expression or not variable:
+                raise SyntaxError('parse error')
+
+            parsed_expression = Parsor(expression).execute()
+            self.parsed_statements.append({
+                'type': 'assign',
+                'variable': variable,
+                'value': parsed_expression
+            })
+        elif '++' in statement:
+            return
+        elif '--' in statement:
+            return
+        elif any([i in statement for i in single_len_symbols]) or any([i in statement for i in single_len_symbols]):
+            self.parsed_statements.append({
+                'type': 'eval',
+                'value': Parsor(statement).execute()
+            })
+        else:
+            self.parsed_statements.append({
+                'type': 'assign',
+                'variable': statement,
+                'value': Parsor('0').execute()
+            })
+
+    def evaluate(self):
+        if not self.parsed_statements:
+            return
+
+        for statement in self.parsed_statements:
+            if statement['type'] == 'print':
+                self.printlist = []
+                if not statement['value']:
+                    print()
+                    continue
+
+                for item in statement['value']:
+                    if isinstance(item, str):
+                        self.printlist.append(item)
+                    else:
+                        val = Interpreter(item, self.variables)
+                        result = val.execute()
+                        self.printlist.append(result)
+                print(*self.printlist, sep=' ')
+                self.printlist = []
+            elif type == 'eval':
+                Interpreter(statement['value'], self.variables).execute()
+            elif statement['type'] == 'assign':
+                self.variables[statement['variable']] = Interpreter(
+                    statement['value'], self.variables
+                ).execute()
+
 
 if __name__ == '__main__':
-    # statements = ['x + y * z', 'x / y * z', 'x / y * z', '(x + y) * z + 5', '(x + y) * (z + 5)', '(x + y) * (z - 5)']
-    # variables = {'x': 6, 'y': 2, 'z': 3}
-    # statements = []
-    # for line in sys.stdin:
-    #     if not line:
-    #         break
-    #     else:
-    #         statements.append(line.strip())
-
-    # statements, variables = StatementEvaluator(statements, {}).evaluate()
-    # for statement in statements:
-    #     parsed_statement = Parsor(statement).execute()
-    #     interpreter = Interpreter(parsed_statement, variables)
-    #     result = interpreter.execute()
-    #     print(f"Statement: {statement}\nResult: {result}\n")
     statements = []
     for line in sys.stdin:
         if line:
             statements.append(line.strip())
-    result = StatementEvaluator(statements).evaluate()
-    try:
-        for i in result:
-            print(i)
-    except TypeError:
-        print(None)
+    StatementEvaluator(statements).execute()
