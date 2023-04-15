@@ -344,17 +344,64 @@ class Interpreter(object):
     def interp_or(self):
         return Interpreter(self.a.children[0], self.variables).execute() or Interpreter(self.a.children[1], self.variables).execute()
     
+    def interp_incr_decr(self):
+        pass
 
 class StatementEvaluator(object):
-    pass
-
+    def __init__(self, statements):
+        self.statements = statements
+        self.variables = {}
+        self.printlist = []
+    def evaluate(self):
+        for statement in self.statements:
+            if len(statement.split(' ')) == 1 or '++' not in statement or '--' not in statement:
+                self.variables[statement] = float(0)
+            elif statement.startswith("print "):
+                linestatement = statement[6: ].strip()
+                linestatement = linestatement.split(',')
+                for i in linestatement:
+                    parsed_statement = Parsor(i).execute()
+                    val = Interpreter(parsed_statement, self.variables)
+                    result = val.execute()
+                    self.printlist.append(result)
+                return self.printlist
+            else:
+                statement = statement.replace(' ', '')
+                calculate = statement.split('=')
+                variable = calculate[0]
+                expression = calculate[1]
+                try:
+                    parsed_statement = Parsor(expression).execute()
+                    val = Interpreter(parsed_statement, self.variables)
+                    result = val.execute()
+                except NameError:
+                    return "NameError"
+                self.variables[variable] = result
+        pass
 
 if __name__ == '__main__':
+    # statements = ['x + y * z', 'x / y * z', 'x / y * z', '(x + y) * z + 5', '(x + y) * (z + 5)', '(x + y) * (z - 5)']
+    # variables = {'x': 6, 'y': 2, 'z': 3}
+    # statements = []
+    # for line in sys.stdin:
+    #     if not line:
+    #         break
+    #     else:
+    #         statements.append(line.strip())
+
+    # statements, variables = StatementEvaluator(statements, {}).evaluate()
+    # for statement in statements:
+    #     parsed_statement = Parsor(statement).execute()
+    #     interpreter = Interpreter(parsed_statement, variables)
+    #     result = interpreter.execute()
+    #     print(f"Statement: {statement}\nResult: {result}\n")
     statements = []
     for line in sys.stdin:
         if line:
             statements.append(line.strip())
-
-    for statement in statements:
-        # TODO: Evaluate the statement and then pass to the interpreter
-        pass
+    result = StatementEvaluator(statements).evaluate()
+    try:
+        for i in result:
+            print(i)
+    except TypeError:
+        print(None)
