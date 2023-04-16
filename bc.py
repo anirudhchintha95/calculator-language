@@ -640,16 +640,8 @@ class StatementEvaluator(object):
 
 
 if __name__ == '__main__':
-    lines = ""
-    while True:
-        line = input()
+    statements = []
+    for line in sys.stdin:
         if line:
-            lines += line + '\n'
-        else:
-            break
-    StatementEvaluator(lines.split('\n')).execute()
-    # statements = []
-    # for line in sys.stdin:
-    #     if line:
-    #         statements.append(line.strip())
-    # StatementEvaluator(statements).execute()
+            statements.append(line.strip())
+    StatementEvaluator(statements).execute()
