@@ -5,10 +5,11 @@ import sys
 
 single_len_symbols = ["-", "+", "*", "/", "%", "^", "!", "(", ")", "<", ">"]
 double_len_symbols = ["||", "&&", "++", "--", "==", "!=", "<=", ">="]
+keywords = ["print"]
 
 disj_symbols = ["+", "-"]
 conj_symbols = ["*", "/", "%"]
-power_conj_symbols = ["^"]
+power_symbols = ["^"]
 neg_symbols = ["-"]
 incr_or_decr_symbols = ["--", "++"]
 
@@ -99,7 +100,9 @@ class Lexer(object):
                 self.i += 2
             else:
                 # Otherwise, this is a regular single length symbol
-                self.evaluate_symbol()
+                # self.evaluate_symbol()
+                raise SyntaxError(
+                    f'unexpected symbol {self.s[self.i:self.i+2]}')
             return
         self.tokens.append(token('sym', self.s[self.i:self.i+2]))
         self.i += 2
@@ -259,6 +262,7 @@ class Parsor(object):
         t = self.ts[i]
 
         if t.typ == 'var':
+            self.check_var_name_validity(t.val)
             return ast('var', t.val), i+1
         elif t.typ == 'fl':
             return ast('fl', float(t.val)), i+1
@@ -276,6 +280,10 @@ class Parsor(object):
             return a, i + 1
 
         raise SyntaxError(f'expected atom, got "{self.ts[i]}"')
+    
+    def check_var_name_validity(self, name):
+        if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name) is None or all([i == '_' for i in name]) or name in keywords:
+            raise SyntaxError('parse error')
 
 
 class Interpreter(object):
@@ -521,17 +529,14 @@ class StatementEvaluator(object):
             expression = f'{variable}^{calculate[1]}'
             self.parse_equate(expression, variable)
         elif '=' in statement:
-            calculate = statement.split('=')
-            variable = calculate[0]
-            expression = calculate[1]
-            self.parse_equate(expression, variable)
-        elif any([i in statement for i in single_len_symbols]) or any([i in statement for i in double_len_symbols]):
+            self.assignment_parser(statement)
+        elif any([i in statement for i in single_len_symbols]) or any([i in statement for i in double_len_symbols]) or all([i.isdigit() or i == '.' for i in statement]):
             self.parsed_statements.append({
                 'type': 'eval',
                 'value': Parsor(statement).execute()
             })
         else:
-            # self.check_var_name_validity(statement)
+            self.check_var_name_validity(statement)
             self.parsed_statements.append({
                 'type': 'assign',
                 'variable': statement,
@@ -541,7 +546,7 @@ class StatementEvaluator(object):
     def parse_equate(self, expression, variable):
         if not expression or not variable:
             raise SyntaxError('parse error')
-        
+
         self.check_var_name_validity(variable)
 
         parsed_expression = Parsor(expression).execute()
@@ -580,9 +585,17 @@ class StatementEvaluator(object):
                     statement['value'], self.variables
                 ).execute()
 
+    def assignment_parser(self, statement):
+        items = statement.split('=')
+        if len(items) < 2:
+            raise SyntaxError('parse error')
+
+        for i in items[:-1]:
+            self.parse_equate(items[-1], i)
+
     def check_var_name_validity(self, name):
-        if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name) is None:
-                raise SyntaxError('parse error')
+        if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name) is None or all([i == '_' for i in name]) or name in keywords:
+            raise SyntaxError('parse error')
 
 
 if __name__ == '__main__':
