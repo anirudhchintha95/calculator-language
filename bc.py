@@ -1,12 +1,13 @@
 from typing import Any
 import re
 import sys
+import math
 
 
 single_len_symbols = ["-", "+", "*", "/", "%", "^", "!", "(", ")", "<", ">"]
 double_len_symbols = ["||", "&&", "++", "--", "==", "!=", "<=", ">="]
 keywords = ["print"]
-
+inbuilt_fn = ['min', 'max', 'floor', 'ceil', 'sqrt', 'ln', 'read']
 disj_symbols = ["+", "-"]
 conj_symbols = ["*", "/", "%"]
 power_symbols = ["^"]
@@ -57,6 +58,7 @@ class Lexer(object):
     def evaluate_space(self):
         self.i += 1
 
+
     def evaluate_alpha(self):
         end = self.i + 1
         while end < len(self.s) and (self.s[end].isalnum() or self.s[end] == '_'):
@@ -101,7 +103,7 @@ class Lexer(object):
                 self.i += 2
             else:
                 # Otherwise, this is a regular single length symbol
-                # self.evaluate_symbol()
+                 # self.evaluate_symbol()
                 raise SyntaxError(
                     f'unexpected symbol {self.s[self.i:self.i+2]}')
             return
@@ -126,7 +128,7 @@ class ast():
 
     def __repr__(self):
         return f'ast({self.typ!r}, {", ".join([repr(c) for c in self.children])})'
-
+    
     def add_post_op(self, post_op: Any):
         self.post_op = post_op
 
@@ -145,7 +147,8 @@ class Parsor(object):
             raise SyntaxError(f"expected EOF, found {self.ts[i:]!r}")
 
         return a
-    
+
+        
     def relational(self, i: int) -> tuple[ast, int]:
         """
         >>> Parsor('x < y').execute()
@@ -153,14 +156,11 @@ class Parsor(object):
         """
         if i >= len(self.ts):
             raise SyntaxError('expected relational, found EOF')
-
         lhs, i = self.plus_or_minus(i)
-
         while i < len(self.ts) and self.ts[i].typ == 'sym' and self.ts[i].val in relational_symbols:
             val = self.ts[i].val
             rhs, i = self.plus_or_minus(i+1)
             lhs = ast(val, lhs, rhs)
-
         return lhs, i
 
     def plus_or_minus(self, i: int) -> tuple[ast, int]:
@@ -296,11 +296,10 @@ class Parsor(object):
             return a, i + 1
 
         raise SyntaxError(f'expected atom, got "{self.ts[i]}"')
-    
+
     def check_var_name_validity(self, name):
         if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name) is None or all([i == '_' for i in name]) or name in keywords:
             raise SyntaxError('parse error')
-
 
 class Interpreter(object):
     """
@@ -396,7 +395,6 @@ class Interpreter(object):
         if right in [0, None, 0.0]:
             raise ZeroDivisionError('divide by zero')
         left = Interpreter(self.a.children[0], self.variables).execute()
-
         return left - (right * int(left/right))
         # return left % right
 
@@ -434,7 +432,7 @@ class Interpreter(object):
             raise SyntaxError(f'unknown operation {self.a.children[1]}')
 
         return self.variables[variable]
-    
+
     def interp_eq(self):
         return self.bool_to_int(Interpreter(self.a.children[0], self.variables).execute() == Interpreter(self.a.children[1], self.variables).execute())
     
@@ -456,7 +454,6 @@ class Interpreter(object):
     def bool_to_int(self, b):
         return int(b)
 
-
 class StatementEvaluator(object):
     def __init__(self, statements):
         self.statements = statements
@@ -471,7 +468,6 @@ class StatementEvaluator(object):
         except (SyntaxError, ValueError):
             print("parse error")
             return
-
         try:
             self.evaluate()
         except ZeroDivisionError:
@@ -532,8 +528,14 @@ class StatementEvaluator(object):
         if not statement:
             return
 
+        if any(inbuilt in statement for inbuilt in inbuilt_fn) and '=' not in statement and not statement.startswith("print "):
+          self.inbuiltfn(statement)
+          return
+
         if statement.startswith("print "):
             linestatement = statement[6:].strip().replace(' ', '')
+            new_string = re.sub(r'(\w+),', r'\1 ', linestatement)
+            linestatement = new_string
             linestatement = linestatement.split(',')
             if not linestatement:
                 self.parsed_statements.append({
@@ -541,7 +543,15 @@ class StatementEvaluator(object):
                     'value': []
                 })
             else:
-                printlist = [Parsor(i).execute() for i in linestatement]
+                prinlist = []
+                for i in linestatement:
+                  if any(inbuilt in i for inbuilt in inbuilt_fn):
+                    i = re.sub(r"(\w+)\s+", r"\1,", i)
+                    out = self.inbuiltfn(i)
+                    prinlist.append(out)
+                  else:
+                    prinlist.append(i)
+                printlist = [Parsor(i).execute() for i in prinlist]
                 self.parsed_statements.append({
                     'type': 'print',
                     'value': printlist
@@ -580,9 +590,18 @@ class StatementEvaluator(object):
             variable = calculate[0]
             expression = f'{variable}^{calculate[1]}'
             self.parse_equate(expression, variable)
+        elif '=' in statement:
+            calculate = statement.split('=')
+            variable = calculate[0]
+            expression = calculate[1]
+            if any(inbuilt in expression for inbuilt in inbuilt_fn):
+              out = self.inbuiltfn(expression)
+              self.parse_equate(out, variable)
+            else:
+              self.parse_equate(expression, variable)
         # TODO: Need to fix this for >= and <=
         elif '=' in statement and statement[statement.index('=') - 1] not in ['+', '-', '*', '/', '%', '^', '>', '<']:
-            self.assignment_parser(statement)
+          self.assignment_parser(statement)
         elif any([i in statement for i in single_len_symbols]) or any([i in statement for i in double_len_symbols]) or all([i.isdigit() or i == '.' for i in statement]):
             self.parsed_statements.append({
                 'type': 'eval',
@@ -596,6 +615,46 @@ class StatementEvaluator(object):
                 'value': Parsor('0').execute()
             })
 
+    def inbuiltfn(self, statement):
+      if 'read' not in statement:
+        linestatement = statement.strip().replace('(',' ')
+        linestatement = linestatement.strip().replace(')', '')
+        linestatement = linestatement.strip().replace(', ', ',')
+        linestatement = linestatement.split(' ')
+        math_fn = linestatement[0]
+        values = linestatement[1].split(',')
+        if math_fn == 'min':
+          out = min(values)
+          return out
+        elif math_fn == 'max':
+          out = str(max(values))
+          return out
+        elif math_fn == 'floor':
+          out = str(math.floor(float(values[0])))
+          return out
+        elif math_fn == 'ceil':
+          out = str(math.ceil(float(values[0])))
+          return out
+        elif math_fn == 'sqrt':
+          try:
+            out = str(math.sqrt(float(values[0])))
+            return out
+          except ValueError:
+            print('square root of negative')
+        elif math_fn == 'ln':
+          try:
+            out = str(math.log10(float(values[0])))
+            return out
+          except ValueError:
+            print('natural logarithm of non-positive')
+        return
+      else:
+        try:
+          out = sys.stdin
+          return out
+        except (TypeError, EOFError):
+          print('read error')
+        return
     def parse_equate(self, expression, variable):
         if not expression or not variable:
             raise SyntaxError('parse error')
@@ -646,14 +705,11 @@ class StatementEvaluator(object):
         items = statement.split('=')
         if len(items) < 2:
             raise SyntaxError('parse error')
-
         for i in items[:-1]:
             self.parse_equate(items[-1], i)
-
     def check_var_name_validity(self, name):
         if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name) is None or all([i == '_' for i in name]) or name in keywords:
             raise SyntaxError('parse error')
-
 
 if __name__ == '__main__':
     statements = []
