@@ -531,7 +531,9 @@ class StatementEvaluator(object):
         statement = statement.strip()
         if not statement:
             return
-
+        matches = re.findall(r'(?<=\s)[+-]\s*[+-]+(?=\s)', f"{statement}")
+        if len(matches)>0:
+            raise SyntaxError('parser error')
         if statement.startswith("print "):
             linestatement = statement[6:].strip().replace(' ', '')
             linestatement = linestatement.split(',')
@@ -547,9 +549,7 @@ class StatementEvaluator(object):
                     'value': printlist
                 })
             return
-        matches = re.findall(r'(?<=\s)[+-]\s*[+-]+(?=\s)', f"{statement}")
-        if len(matches)>0:
-            raise SyntaxError('parser error')
+        
             
         statement = statement.strip().replace(' ', '')
 
