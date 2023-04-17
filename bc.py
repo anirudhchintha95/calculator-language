@@ -514,7 +514,11 @@ class Interpreter(object):
         return Interpreter(self.a.children[0], self.variables).execute() ** Interpreter(self.a.children[1], self.variables).execute()
 
     def interp_not(self):
-        return not Interpreter(self.a.children[0], self.variables).execute()
+        if not Interpreter(self.a.children[0], self.variables).execute():
+            return 1
+        else:
+            return 0
+        #return not Interpreter(self.a.children[0], self.variables).execute()
 
     def interp_and(self):
         return Interpreter(self.a.children[0], self.variables).execute() and Interpreter(self.a.children[1], self.variables).execute()
