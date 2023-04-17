@@ -6,7 +6,8 @@ import sys
 single_len_symbols = ["-", "+", "*", "/", "%", "^", "(", ")", "<", ">"]
 boolean_symbols = ["&&", "||", "!"]
 double_len_symbols = ["++", "--", "==", "!=", "<=", ">="]
-op_equals_symbols = ["+=", "-=", "*=", "/=", "%=", "^=", "&&=", "||=", "!="]
+op_equals_symbols = ["+=", "-=", "*=", "/=", "%=", "^=", "!="]
+bool_equals_symbols = ["&&=", "||="]
 assign_symbols = ["="]
 keywords = ["print"]
 
@@ -52,20 +53,17 @@ class Lexer(object):
                 self.evaluate_boolean_symbol()
             elif self.s[self.i] == '!':
                 self.evaluate_symbol()
-            elif self.s[self.i:self.i+2] in op_equals_symbols:
-                self.evaluate_double_symbol()
             elif self.s[self.i:self.i+2] in double_len_symbols:
                 self.evaluate_double_symbol()
-            elif self.s[self.i] in assign_symbols:
-                self.evaluate_symbol()
             elif self.s[self.i] in single_len_symbols:
                 self.evaluate_symbol()
             else:
                 raise SyntaxError(f'unexpected character {self.s[self.i]}')
 
-        return self.tokens
+        return [token for token in self.tokens if token.typ != 'space']
 
     def evaluate_space(self):
+        self.tokens.append(token('space', " "))
         self.i += 1
 
     def evaluate_alpha(self):
@@ -105,22 +103,20 @@ class Lexer(object):
 
     def evaluate_double_symbol(self):
         if (self.s[self.i:self.i+2] == '++' or self.s[self.i:self.i+2] == '--'):
-            # TODO: Fix ++ precedence with spaces
             symbol = self.s[self.i:self.i+2]
             if self.tokens and self.tokens[-1].typ == 'var':
                 # If the previous token is a variable, this is a post-sym operator
                 self.tokens.append(token('sym', symbol))
                 self.i += 2
-            elif not self.tokens or self.tokens[-1].val in single_len_symbols or self.tokens[-1].val in assign_symbols or (self.tokens[-1].val in double_len_symbols and self.tokens[-1].val != '++' and self.tokens[-1].val != '--'):
-                # If the previous token is a symbol or there is no previous token, this is a pre-sym operator
+            elif not self.tokens or self.tokens[-1].typ == 'space':
+                # If the previous token is a space, we can safely assume the next token is a variable
                 self.tokens.append(token('sym', symbol))
                 self.i += 2
             else:
-                # Otherwise, this is a regular single length symbol
-                # Or should we raise error?
-                self.evaluate_symbol()
-                # raise SyntaxError(
-                #     f'unexpected symbol {self.s[self.i:self.i+2]}')
+                # Otherwise, we raise error?
+                raise SyntaxError(
+                    f'unexpected symbol {self.s[self.i:self.i+2]}'
+                )
             return
         self.tokens.append(token('sym', self.s[self.i:self.i+2]))
         self.i += 2
@@ -151,14 +147,14 @@ class Parsor(object):
     def execute(self):
         self.ts = Lexer(self.s).execute()
 
-        a, i = self.parse_logic(0)
+        a, i = self.bool_and_or(0)
 
         if i != len(self.ts):
             raise SyntaxError(f"expected EOF, found {self.ts[i:]!r}")
 
         return a
-    
-    def parse_logic(self, i: int) -> tuple[ast, int]:
+
+    def bool_and_or(self, i: int) -> tuple[ast, int]:
         """
         >>> Parsor('x && y').execute()
         ast('&&', ast('var', 'x'), ast('var', 'y'))
@@ -167,23 +163,29 @@ class Parsor(object):
         """
         if i >= len(self.ts):
             raise SyntaxError('expected boolean, found EOF')
-        
-        # lhs, i = self.plus_or_minus(i)
-        if self.ts[i].val != '!':
-            lhs, i = self.relational(i)
 
-        while i< len(self.ts) and self.ts[i].typ == 'sym' and self.ts[i].val in boolean_symbols:
-            if self.ts[i].val != '!':
-                val = self.ts[i].val
-                rhs, i = self.relational(i+1)
-                lhs = ast(val, lhs, rhs)
-            
-            elif self.ts[i].typ == 'sym' and self.ts[i].val == '!':
-                val = self.ts[i].val
-                a, i = self.parse_logic(i+1)
-                return ast(val, a), i
+        lhs, i = self.boolean_neg(i)
+
+        while i < len(self.ts) and self.ts[i].typ == 'sym' and self.ts[i].val in boolean_symbols:
+            val = self.ts[i].val
+            rhs, i = self.boolean_neg(i+1)
+            lhs = ast(val, lhs, rhs)
 
         return lhs, i
+
+    def boolean_neg(self, i: int) -> tuple[ast, int]:
+        """
+        >>> Parsor('!x').execute()
+        ast('!', ast('var', 'x'))
+        """
+        if i >= len(self.ts):
+            raise SyntaxError('expected boolean, found EOF')
+
+        if self.ts[i].typ == 'sym' and self.ts[i].val == '!':
+            a, i = self.boolean_neg(i+1)
+            return ast('!', a), i
+        else:
+            return self.relational(i)
 
     def relational(self, i: int) -> tuple[ast, int]:
         """
@@ -209,11 +211,7 @@ class Parsor(object):
         lhs, i = self.mul_or_div(i)
 
         while i < len(self.ts) and self.ts[i].typ == 'sym' and self.ts[i].val in disj_symbols:
-            if lhs.post_op:
-                raise SyntaxError('unexpected post_op')
             val = self.ts[i].val
-            if i+1 < len(self.ts) and self.ts[i+1].val in ['++', '--']:
-                raise SyntaxError('unexpected pre_op')
             rhs, i = self.mul_or_div(i+1)
             lhs = ast(val, lhs, rhs)
 
@@ -303,7 +301,7 @@ class Parsor(object):
         elif t.typ == 'fl':
             return ast('fl', float(t.val)), i+1
         elif t.typ == 'sym' and t.val == '(':
-            a, i = self.relational(i + 1)
+            a, i = self.bool_and_or(i + 1)
 
             if i >= len(self.ts):
                 raise SyntaxError(f'expected right paren, got EOF')
@@ -314,10 +312,6 @@ class Parsor(object):
             return a, i + 1
 
         raise SyntaxError(f'expected atom, got "{self.ts[i]}"')
-
-    def check_var_name_validity(self, name):
-        if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name) is None or all([i == '_' for i in name]) or name in keywords:
-            raise SyntaxError('parse error')
 
 
 class Interpreter(object):
@@ -376,15 +370,9 @@ class Interpreter(object):
         elif self.a.typ == '!':
             return self.interp_not()
         elif self.a.typ == '&&':
-            if self.interp_and() == 0:
-                return 0
-            elif self.interp_and() > 0:
-                return 1
+            return self.interp_and()
         elif self.a.typ == '||':
-            if self.interp_or() == 0:
-                return 0
-            elif self.interp_or() > 0:
-                return 1
+            return self.interp_or()
         elif self.a.typ in ['--', '++']:
             return self.interp_incr_or_decr()
 
@@ -398,28 +386,6 @@ class Interpreter(object):
         if self.a.post_op:
             Interpreter(self.a.post_op, self.variables).execute()
         return value
-
-    def interp_assign(self):
-        if not (self.a.children[0].typ == 'var' or self.a.children[0].typ == "="):
-            raise SyntaxError(
-                f'expected variable, got {self.a.children[0].typ}'
-            )
-        if self.a.children[0].typ == 'var':
-            variable = self.a.children[0].children[0]
-            self.variables[variable] = Interpreter(
-                self.a.children[1], self.variables
-            ).execute()
-            return self.variables[variable]
-        else:
-            if self.a.children[0].children[1].typ != 'var':
-                raise SyntaxError(
-                    f'expected variable, got {self.a.children[0].children[1].typ}'
-                )
-            next_child_variable = self.a.children[0].children[1].children[0]
-            self.variables[next_child_variable] = Interpreter(
-                self.a.children[1], self.variables
-            ).execute()
-            return Interpreter(self.a.children[0], self.variables).execute()
 
     def interp_plus(self):
         return Interpreter(self.a.children[0], self.variables).execute() + Interpreter(self.a.children[1], self.variables).execute()
@@ -452,18 +418,14 @@ class Interpreter(object):
         return Interpreter(self.a.children[0], self.variables).execute() ** Interpreter(self.a.children[1], self.variables).execute()
 
     def interp_not(self):
-        if not Interpreter(self.a.children[0], self.variables).execute():
-            return 1
-        else:
-            return 0
-        #return not Interpreter(self.a.children[0], self.variables).execute()
+        return self.bool_to_int(not Interpreter(self.a.children[0], self.variables).execute())
 
     def interp_and(self):
-        return Interpreter(self.a.children[0], self.variables).execute() and Interpreter(self.a.children[1], self.variables).execute()
+        return self.bool_to_int(Interpreter(self.a.children[0], self.variables).execute() and Interpreter(self.a.children[1], self.variables).execute())
 
     def interp_or(self):
-        return Interpreter(self.a.children[0], self.variables).execute() or Interpreter(self.a.children[1], self.variables).execute()
-    
+        return self.bool_to_int(Interpreter(self.a.children[0], self.variables).execute() or Interpreter(self.a.children[1], self.variables).execute())
+
     def interp_incr_or_decr(self):
         if len(self.a.children) != 1:
             raise SyntaxError(f'expected 1 child, got {len(self.a.children)}')
@@ -506,7 +468,7 @@ class Interpreter(object):
         return self.bool_to_int(Interpreter(self.a.children[0], self.variables).execute() <= Interpreter(self.a.children[1], self.variables).execute())
 
     def bool_to_int(self, b):
-        return int(b)
+        return 1 if b else 0
 
 
 class StatementEvaluator(object):
@@ -514,6 +476,7 @@ class StatementEvaluator(object):
         self.statements = statements
         self.variables = {}
         self.parsed_statements = []
+        self.parse_paused_statement = None
         self.printlist = []
         self.in_block_comment = False
 
@@ -535,56 +498,30 @@ class StatementEvaluator(object):
             self.parse_statement(statement)
 
     def parse_statement(self, statement):
-        if self.in_block_comment:
-            if '*/' in statement:
-                self.in_block_comment = False
-                self.parse_statement(statement.split('*/')[1])
-                return
-
-        if self.in_block_comment:
-            return
-
-        if not statement:
-            return
-
-        has_comment = '#' in statement
-        has_block_comment = '/*' in statement
-
-        if has_comment and has_block_comment:
-            comment_indexes = (statement.index('/*'), statement.index('#'))
-            if comment_indexes[0] < comment_indexes[1]:
-                self.in_block_comment = True
-                self.parse_statement(statement.split('/*')[0])
-                statement = statement.split('/*')[1]
-                if '*/' in statement:
-                    self.in_block_comment = False
-                    self.parse_statement(statement.split('*/')[1])
-            else:
-                self.parse_statement(statement.split('#')[0])
-            return
-
-        if has_block_comment:
-            self.in_block_comment = True
-            self.parse_statement(statement.split('/*')[0])
-            statement = statement.split('/*')[1]
-            if '*/' in statement:
-                self.in_block_comment = False
-                self.parse_statement(statement.split('*/')[1])
-                return
-            return
-
-        if has_comment:
-            self.parse_statement(statement.split('#')[0])
-            return
-
-        if '*/' in statement and not self.in_block_comment:
-            raise SyntaxError("parse error")
-
         statement = statement.strip()
         if not statement:
             return
 
-        self.parsed_statements.append(StatementParser(statement).parse())
+        parsed_statement = StatementParser(
+            statement, self.in_block_comment
+        ).parse()
+        if parsed_statement.get('block_comment', False):
+            self.in_block_comment = True
+            if not self.parse_paused_statement:
+                self.parse_paused_statement = ''
+            self.parse_paused_statement += parsed_statement['statement']
+            return
+        else:
+            if self.in_block_comment:
+                self.in_block_comment = False
+                self.parse_paused_statement += parsed_statement['statement']
+                # Start parsing again from the beginning
+                self.parse_statement(self.parse_paused_statement)
+                # Reset the paused statement
+                self.parse_paused_statement = None
+                return
+
+        self.parsed_statements.append(parsed_statement)
 
     def evaluate(self):
         if not self.parsed_statements:
@@ -617,29 +554,34 @@ class StatementEvaluator(object):
 
 
 class StatementParser(object):
-    def __init__(self, statement):
+    def __init__(self, statement, block_comment):
         self.statement = statement
         self.index = 0
+        self.block_comment = block_comment
+        self.block_comment_ended = False
 
     def parse(self):
+        # Remove commented code from statement
+        self.sanitize_statement()
+
+        if self.block_comment:
+            return {'statement': self.statement, 'block_comment': True}
+        
+        if self.block_comment_ended:
+            return {'statement': self.statement, 'block_comment': False}
+
         while self.index < len(self.statement):
-            # TODO: Move the block and single line comment here
             if self.index == 0 and self.statement.startswith('print'):
                 if len(self.statement) > 5 and self.statement[5] != ' ':
+                    self.index = 5
                     continue
                 linestatement = self.statement[6:].strip()
                 linestatement = linestatement.split(',')
                 if not linestatement:
-                    return {
-                        'type': 'print',
-                        'value': []
-                    }
+                    return self.print_eval_dict_builder('print', [])
                 else:
                     printlist = [Parsor(i).execute() for i in linestatement]
-                    return {
-                        'type': 'print',
-                        'value': printlist
-                    }
+                    return self.print_eval_dict_builder('print', printlist)
 
             if self.statement[self.index] == ' ':
                 self.index += 1
@@ -647,6 +589,9 @@ class StatementParser(object):
 
             if self.statement[self.index:self.index + 2] in op_equals_symbols:
                 return self.parse_op_equate()
+
+            if self.statement[self.index:self.index + 3] in bool_equals_symbols:
+                return self.parse_op_bool_equate()
 
             if self.statement[self.index] == '=':
                 return self.parse_equate()
@@ -656,10 +601,86 @@ class StatementParser(object):
         self.statement = self.statement.strip()
 
         if self.statement:
-            return {
-                'type': 'eval',
-                'value': Parsor(self.statement).execute()
-            }
+            return self.print_eval_dict_builder('eval', Parsor(self.statement).execute())
+
+    def sanitize_statement(self):
+        if self.block_comment:
+            comment_type = '*/'
+            comment_idx = self.find_comment_type(self.statement, comment_type)
+
+            if comment_idx is None:
+                self.statement = ''
+                return
+        else:
+            comment_type, comment_idx = self.find_any_comment(
+                self.statement
+            )
+
+        if not comment_type:
+            return True
+
+        if comment_type == '#':
+            self.statement = self.statement[:comment_idx]
+            return True
+
+        if comment_type == '/*':
+            new_statement = self.statement[:comment_idx]
+            end_comment_idx = self.find_comment_type(
+                self.statement[comment_idx:], '*/'
+            )
+            if end_comment_idx:
+                new_statement += self.statement[
+                    comment_idx + end_comment_idx + 2:
+                ]
+                self.statement = new_statement
+                self.block_comment = False
+                self.block_comment_ended = True
+                # Calling sanitize statement again to check for any other comments
+                self.sanitize_statement()
+            else:
+                self.statement = new_statement
+                self.block_comment = True
+                self.block_comment_ended = False
+
+        if comment_type == '*/':
+            if not self.block_comment:
+                raise SyntaxError('Unexpected */')
+            
+            new_statement = self.statement[comment_idx + 2:]
+            self.statement = new_statement
+            self.block_comment = False
+            self.block_comment_ended = True
+            # Calling sanitize statement again to check for any other comments
+            self.sanitize_statement()
+
+
+    def find_any_comment(self, statement):
+        comment_idxs = [
+            statement.index(i)
+            for i in ('#', '/*', '*/')
+            if i in statement
+        ]
+        idx = min(comment_idxs) if len(comment_idxs) > 0 else None
+
+        if idx is None:
+            return (None, statement)
+
+        return ('#' if statement[idx] == '#' else statement[idx:idx+2], idx)
+
+    def find_comment_type(self, statement, type):
+        if not type or not statement:
+            return None
+
+        if type == '#':
+            return statement.index('#') if '#' in statement else None
+
+        if type == '/*':
+            return statement.index('/*') if '/*' in statement else None
+
+        if type == '*/':
+            return statement.index('*/') if '*/' in statement else None
+
+        return None
 
     def parse_equate(self):
         variable = self.statement[:self.index].strip()
@@ -669,28 +690,48 @@ class StatementParser(object):
 
         VariableNameChecker(variable).validate()
 
-        parsed_expression = Parsor(expression).execute()
-        return {
-            'type': 'assign',
-            'variable': variable,
-            'value': parsed_expression
-        }
+        return self.assign_dict_builder(
+            variable,
+            Parsor(expression).execute()
+        )
 
     def parse_op_equate(self):
+        if self.statement[self.index:self.index+2] not in op_equals_symbols:
+            raise SyntaxError('parse error')
+        return self.parse_op_equate_helper(2)
+
+    def parse_op_bool_equate(self):
+        if self.statement[self.index:self.index+3] not in bool_equals_symbols:
+            raise SyntaxError('parse error')
+        return self.parse_op_equate_helper(3)
+
+    def parse_op_equate_helper(self, length):
         variable = self.statement[:self.index].strip()
-        operation = self.statement[self.index:self.index+2]
-        expression = self.statement[self.index+2:].strip()
+        operation = self.statement[self.index:self.index+length]
+        expression = self.statement[self.index+length:].strip()
         if not expression or not variable:
             raise SyntaxError('parse error')
 
         VariableNameChecker(variable).validate()
 
-        parsed_expression = Parsor(
-            f'{variable}{operation.replace("=", "")}{expression}').execute()
+        return self.assign_dict_builder(
+            variable,
+            Parsor(
+                f'{variable}{operation.replace("=", "")}{expression}'
+            ).execute()
+        )
+
+    def assign_dict_builder(self, key, value):
         return {
             'type': 'assign',
-            'variable': variable,
-            'value': parsed_expression
+            'variable': key,
+            'value': value
+        }
+
+    def print_eval_dict_builder(self, typ, value):
+        return {
+            'type': typ,
+            'value': value
         }
 
 
