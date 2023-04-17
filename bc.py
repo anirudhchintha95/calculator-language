@@ -160,7 +160,6 @@ class Parsor(object):
     def execute(self):
         self.ts = Lexer(self.s).execute()
         a, i = self.assign(0)
-        print(a,i)
         if i != len(self.ts):
             raise SyntaxError(f"expected EOF, found {self.ts[i:]!r}")
 
@@ -176,7 +175,6 @@ class Parsor(object):
 
         lhs, i = self.parse_logic(i)
         # lhs, i = self.parse_logic(i)
-        print(lhs)
         if i < len(self.ts) and self.ts[i].typ == 'sym':
             if self.ts[i].val in op_equals_symbols:
                 if lhs.typ != 'var':
@@ -440,9 +438,15 @@ class Interpreter(object):
         elif self.a.typ == '!':
             return not self.interp_not()
         elif self.a.typ == '&&':
-            return self.interp_and()
+            if self.interp_and() == 0:
+                return 0
+            elif self.interp_and() > 0:
+                return 1
         elif self.a.typ == '||':
-            return self.interp_or()
+            if self.interp_or() == 0:
+                return 0
+            elif self.interp_or() > 0:
+                return 1
         elif self.a.typ in ['--', '++']:
             return self.interp_incr_or_decr()
 
