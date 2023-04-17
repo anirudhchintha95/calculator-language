@@ -3,9 +3,10 @@ import re
 import sys
 
 
-single_len_symbols = ["-", "+", "*", "/", "%", "^", "!", "(", ")", "<", ">"]
-double_len_symbols = ["||", "&&", "++", "--", "==", "!=", "<=", ">="]
-op_equals_symbols = ["+=", "-=", "*=", "/=", "%=", "^="]
+single_len_symbols = ["-", "+", "*", "/", "%", "^", "(", ")", "<", ">"]
+boolean_symbols = ["&&", "||", "!"]
+double_len_symbols = ["++", "--", "==", "!=", "<=", ">="]
+op_equals_symbols = ["+=", "-=", "*=", "/=", "%=", "^=", "&&=", "||=", "!="]
 assign_symbols = ["="]
 keywords = ["print"]
 
@@ -47,6 +48,10 @@ class Lexer(object):
                 self.evaluate_alpha()
             elif self.s[self.i].isdigit():
                 self.evaluate_digit()
+            elif self.s[self.i:self.i+2] in boolean_symbols:
+                self.evaluate_boolean_symbol()
+            elif self.s[self.i] == '!':
+                self.evaluate_symbol()
             elif self.s[self.i:self.i+2] in op_equals_symbols:
                 self.evaluate_double_symbol()
             elif self.s[self.i:self.i+2] in double_len_symbols:
@@ -89,6 +94,10 @@ class Lexer(object):
         self.tokens.append(token('fl', self.s[self.i:end]))
 
         self.i = end
+
+    def evaluate_boolean_symbol(self):
+        self.tokens.append(token('sym', self.s[self.i:self.i+2]))
+        self.i += 2
 
     def evaluate_symbol(self):
         self.tokens.append(token('sym', self.s[self.i]))
@@ -142,12 +151,39 @@ class Parsor(object):
     def execute(self):
         self.ts = Lexer(self.s).execute()
 
-        a, i = self.relational(0)
+        a, i = self.parse_logic(0)
 
         if i != len(self.ts):
             raise SyntaxError(f"expected EOF, found {self.ts[i:]!r}")
 
         return a
+    
+    def parse_logic(self, i: int) -> tuple[ast, int]:
+        """
+        >>> Parsor('x && y').execute()
+        ast('&&', ast('var', 'x'), ast('var', 'y'))
+        >>> Parsor('!x').execute()
+        ast('!', ast('var', 'x'))
+        """
+        if i >= len(self.ts):
+            raise SyntaxError('expected boolean, found EOF')
+        
+        # lhs, i = self.plus_or_minus(i)
+        if self.ts[i].val != '!':
+            lhs, i = self.relational(i)
+
+        while i< len(self.ts) and self.ts[i].typ == 'sym' and self.ts[i].val in boolean_symbols:
+            if self.ts[i].val != '!':
+                val = self.ts[i].val
+                rhs, i = self.relational(i+1)
+                lhs = ast(val, lhs, rhs)
+            
+            elif self.ts[i].typ == 'sym' and self.ts[i].val == '!':
+                val = self.ts[i].val
+                a, i = self.parse_logic(i+1)
+                return ast(val, a), i
+
+        return lhs, i
 
     def relational(self, i: int) -> tuple[ast, int]:
         """
@@ -337,12 +373,18 @@ class Interpreter(object):
             return self.interp_gte()
         elif self.a.typ == '<=':
             return self.interp_lte()
-        # elif self.a.typ == '!':
-        #     return not self.interp_not()
-        # elif self.a.typ == '&&':
-        #     return self.interp_and()
-        # elif self.a.typ == '||':
-        #     return self.interp_or()
+        elif self.a.typ == '!':
+            return self.interp_not()
+        elif self.a.typ == '&&':
+            if self.interp_and() == 0:
+                return 0
+            elif self.interp_and() > 0:
+                return 1
+        elif self.a.typ == '||':
+            if self.interp_or() == 0:
+                return 0
+            elif self.interp_or() > 0:
+                return 1
         elif self.a.typ in ['--', '++']:
             return self.interp_incr_or_decr()
 
@@ -410,14 +452,18 @@ class Interpreter(object):
         return Interpreter(self.a.children[0], self.variables).execute() ** Interpreter(self.a.children[1], self.variables).execute()
 
     def interp_not(self):
-        return not Interpreter(self.a.children[0], self.variables).execute()
+        if not Interpreter(self.a.children[0], self.variables).execute():
+            return 1
+        else:
+            return 0
+        #return not Interpreter(self.a.children[0], self.variables).execute()
 
     def interp_and(self):
         return Interpreter(self.a.children[0], self.variables).execute() and Interpreter(self.a.children[1], self.variables).execute()
 
     def interp_or(self):
         return Interpreter(self.a.children[0], self.variables).execute() or Interpreter(self.a.children[1], self.variables).execute()
-
+    
     def interp_incr_or_decr(self):
         if len(self.a.children) != 1:
             raise SyntaxError(f'expected 1 child, got {len(self.a.children)}')
