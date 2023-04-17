@@ -5,6 +5,8 @@ import sys
 
 single_len_symbols = ["-", "+", "*", "/", "%", "^", "!", "(", ")", "<", ">"]
 double_len_symbols = ["||", "&&", "++", "--", "==", "!=", "<=", ">="]
+op_equals_symbols = ["+=", "-=", "*=", "/=", "%=", "^="]
+assign_symbols = ["="]
 keywords = ["print"]
 
 disj_symbols = ["+", "-"]
@@ -45,8 +47,12 @@ class Lexer(object):
                 self.evaluate_alpha()
             elif self.s[self.i].isdigit():
                 self.evaluate_digit()
+            elif self.s[self.i:self.i+2] in op_equals_symbols:
+                self.evaluate_double_symbol()
             elif self.s[self.i:self.i+2] in double_len_symbols:
                 self.evaluate_double_symbol()
+            elif self.s[self.i] in assign_symbols:
+                self.evaluate_symbol()
             elif self.s[self.i] in single_len_symbols:
                 self.evaluate_symbol()
             else:
@@ -101,9 +107,10 @@ class Lexer(object):
                 self.i += 2
             else:
                 # Otherwise, this is a regular single length symbol
-                # self.evaluate_symbol()
-                raise SyntaxError(
-                    f'unexpected symbol {self.s[self.i:self.i+2]}')
+                # Or should we raise error?
+                self.evaluate_symbol()
+                # raise SyntaxError(
+                #     f'unexpected symbol {self.s[self.i:self.i+2]}')
             return
         self.tokens.append(token('sym', self.s[self.i:self.i+2]))
         self.i += 2
@@ -139,13 +146,45 @@ class Parsor(object):
     def execute(self):
         self.ts = Lexer(self.s).execute()
 
-        a, i = self.relational(0)
+        a, i = self.assign(0)
 
         if i != len(self.ts):
             raise SyntaxError(f"expected EOF, found {self.ts[i:]!r}")
 
         return a
-    
+
+    def assign(self, i: int) -> tuple[ast, int]:
+        """
+        >>> Parsor('x = y').execute()
+        ast('=', ast('var', 'x'), ast('var', 'y'))
+        """
+        if i >= len(self.ts):
+            raise SyntaxError('expected assign, found EOF')
+
+        lhs, i = self.relational(i)
+
+        if i < len(self.ts) and self.ts[i].typ == 'sym':
+            if self.ts[i].val in op_equals_symbols:
+                if lhs.typ != 'var':
+                    raise SyntaxError(
+                        'expected variable, found ' + lhs.typ
+                    )
+                val = self.ts[i].val
+                rhs, i = self.relational(i+1)
+                if i != len(self.ts):
+                    raise SyntaxError(f"expected EOF, found {self.ts[i:]!r}")
+                lhs = ast('=', lhs, ast(val.replace('=', ''), lhs, rhs))
+            elif self.ts[i].val in assign_symbols:
+                while i < len(self.ts) and self.ts[i].typ == 'sym' and self.ts[i].val in assign_symbols:
+                    if not (lhs.typ == 'var' or lhs.typ == '='):
+                        raise SyntaxError(
+                            'expected variable, found ' + lhs.typ)
+                    val = self.ts[i].val
+                    rhs, i = self.relational(i+1)
+                    lhs = ast(val, lhs, rhs)
+
+        return lhs, i
+
     def relational(self, i: int) -> tuple[ast, int]:
         """
         >>> Parsor('x < y').execute()
@@ -285,7 +324,7 @@ class Parsor(object):
         elif t.typ == 'kw' and t.val in ['true', 'false']:
             return ast('bool', t.val == 'true'), i + 1
         elif t.typ == 'sym' and t.val == '(':
-            a, i = self.relational(i + 1)
+            a, i = self.assign(i + 1)
 
             if i >= len(self.ts):
                 raise SyntaxError(f'expected right paren, got EOF')
@@ -296,7 +335,7 @@ class Parsor(object):
             return a, i + 1
 
         raise SyntaxError(f'expected atom, got "{self.ts[i]}"')
-    
+
     def check_var_name_validity(self, name):
         if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name) is None or all([i == '_' for i in name]) or name in keywords:
             raise SyntaxError('parse error')
@@ -329,6 +368,8 @@ class Interpreter(object):
             return self.a.children[0]
         elif self.a.typ == 'var':
             return self.interp_var()
+        elif self.a.typ == '=':
+            return self.interp_assign()
         elif self.a.typ == '+':
             return self.interp_plus()
         elif self.a.typ == '-':
@@ -353,12 +394,12 @@ class Interpreter(object):
             return self.interp_gte()
         elif self.a.typ == '<=':
             return self.interp_lte()
-        elif self.a.typ == '!':
-            return not self.interp_not()
-        elif self.a.typ == '&&':
-            return self.interp_and()
-        elif self.a.typ == '||':
-            return self.interp_or()
+        # elif self.a.typ == '!':
+        #     return not self.interp_not()
+        # elif self.a.typ == '&&':
+        #     return self.interp_and()
+        # elif self.a.typ == '||':
+        #     return self.interp_or()
         elif self.a.typ in ['--', '++']:
             return self.interp_incr_or_decr()
 
@@ -372,6 +413,28 @@ class Interpreter(object):
         if self.a.post_op:
             Interpreter(self.a.post_op, self.variables).execute()
         return value
+
+    def interp_assign(self):
+        if not (self.a.children[0].typ == 'var' or self.a.children[0].typ == "="):
+            raise SyntaxError(
+                f'expected variable, got {self.a.children[0].typ}'
+            )
+        if self.a.children[0].typ == 'var':
+            variable = self.a.children[0].children[0]
+            self.variables[variable] = Interpreter(
+                self.a.children[1], self.variables
+            ).execute()
+            return self.variables[variable]
+        else:
+            if self.a.children[0].children[1].typ != 'var':
+                raise SyntaxError(
+                    f'expected variable, got {self.a.children[0].children[1].typ}'
+                )
+            next_child_variable = self.a.children[0].children[1].children[0]
+            self.variables[next_child_variable] = Interpreter(
+                self.a.children[1], self.variables
+            ).execute()
+            return Interpreter(self.a.children[0], self.variables).execute()
 
     def interp_plus(self):
         return Interpreter(self.a.children[0], self.variables).execute() + Interpreter(self.a.children[1], self.variables).execute()
@@ -434,25 +497,25 @@ class Interpreter(object):
             raise SyntaxError(f'unknown operation {self.a.children[1]}')
 
         return self.variables[variable]
-    
+
     def interp_eq(self):
         return self.bool_to_int(Interpreter(self.a.children[0], self.variables).execute() == Interpreter(self.a.children[1], self.variables).execute())
-    
+
     def interp_neq(self):
         return self.bool_to_int(Interpreter(self.a.children[0], self.variables).execute() != Interpreter(self.a.children[1], self.variables).execute())
-    
+
     def interp_gt(self):
         return self.bool_to_int(Interpreter(self.a.children[0], self.variables).execute() > Interpreter(self.a.children[1], self.variables).execute())
-    
+
     def interp_lt(self):
         return self.bool_to_int(Interpreter(self.a.children[0], self.variables).execute() < Interpreter(self.a.children[1], self.variables).execute())
-    
+
     def interp_gte(self):
         return self.bool_to_int(Interpreter(self.a.children[0], self.variables).execute() >= Interpreter(self.a.children[1], self.variables).execute())
-    
+
     def interp_lte(self):
         return self.bool_to_int(Interpreter(self.a.children[0], self.variables).execute() <= Interpreter(self.a.children[1], self.variables).execute())
-    
+
     def bool_to_int(self, b):
         return int(b)
 
@@ -548,53 +611,58 @@ class StatementEvaluator(object):
                 })
             return
 
-        statement = statement.strip().replace(' ', '')
+        self.parsed_statements.append({
+            'type': 'eval',
+            'value': Parsor(statement).execute()
+        })
 
-        if '+=' in statement:
-            calculate = statement.split('+=')
-            variable = calculate[0]
-            expression = f'{variable}+{calculate[1]}'
-            self.parse_equate(expression, variable)
-        elif '-=' in statement:
-            calculate = statement.split('-=')
-            variable = calculate[0]
-            expression = f'{variable}-{calculate[1]}'
-            self.parse_equate(expression, variable)
-        elif '*=' in statement:
-            calculate = statement.split('*=')
-            variable = calculate[0]
-            expression = f'{variable}*{calculate[1]}'
-            self.parse_equate(expression, variable)
-        elif '/=' in statement:
-            calculate = statement.split('/=')
-            variable = calculate[0]
-            expression = f'{variable}/{calculate[1]}'
-            self.parse_equate(expression, variable)
-        elif '%=' in statement:
-            calculate = statement.split('%=')
-            variable = calculate[0]
-            expression = f'{variable}%{calculate[1]}'
-            self.parse_equate(expression, variable)
-        elif '^=' in statement:
-            calculate = statement.split('^=')
-            variable = calculate[0]
-            expression = f'{variable}^{calculate[1]}'
-            self.parse_equate(expression, variable)
-        # TODO: Need to fix this for >= and <=
-        elif '=' in statement and statement[statement.index('=') - 1] not in ['+', '-', '*', '/', '%', '^', '>', '<']:
-            self.assignment_parser(statement)
-        elif any([i in statement for i in single_len_symbols]) or any([i in statement for i in double_len_symbols]) or all([i.isdigit() or i == '.' for i in statement]):
-            self.parsed_statements.append({
-                'type': 'eval',
-                'value': Parsor(statement).execute()
-            })
-        else:
-            self.check_var_name_validity(statement)
-            self.parsed_statements.append({
-                'type': 'assign',
-                'variable': statement,
-                'value': Parsor('0').execute()
-            })
+        # statement = statement.strip().replace(' ', '')
+
+        # if '+=' in statement:
+        #     calculate = statement.split('+=')
+        #     variable = calculate[0]
+        #     expression = f'{variable}+{calculate[1]}'
+        #     self.parse_equate(expression, variable)
+        # elif '-=' in statement:
+        #     calculate = statement.split('-=')
+        #     variable = calculate[0]
+        #     expression = f'{variable}-{calculate[1]}'
+        #     self.parse_equate(expression, variable)
+        # elif '*=' in statement:
+        #     calculate = statement.split('*=')
+        #     variable = calculate[0]
+        #     expression = f'{variable}*{calculate[1]}'
+        #     self.parse_equate(expression, variable)
+        # elif '/=' in statement:
+        #     calculate = statement.split('/=')
+        #     variable = calculate[0]
+        #     expression = f'{variable}/{calculate[1]}'
+        #     self.parse_equate(expression, variable)
+        # elif '%=' in statement:
+        #     calculate = statement.split('%=')
+        #     variable = calculate[0]
+        #     expression = f'{variable}%{calculate[1]}'
+        #     self.parse_equate(expression, variable)
+        # elif '^=' in statement:
+        #     calculate = statement.split('^=')
+        #     variable = calculate[0]
+        #     expression = f'{variable}^{calculate[1]}'
+        #     self.parse_equate(expression, variable)
+        # # TODO: Need to fix this for >= and <=
+        # elif '=' in statement and statement[statement.index('=') - 1] not in ['+', '-', '*', '/', '%', '^', '>', '<']:
+        #     self.assignment_parser(statement)
+        # elif any([i in statement for i in single_len_symbols]) or any([i in statement for i in double_len_symbols]) or all([i.isdigit() or i == '.' for i in statement]):
+        #     self.parsed_statements.append({
+        #         'type': 'eval',
+        #         'value': Parsor(statement).execute()
+        #     })
+        # else:
+        #     self.check_var_name_validity(statement)
+        #     self.parsed_statements.append({
+        #         'type': 'assign',
+        #         'variable': statement,
+        #         'value': Parsor('0').execute()
+        #     })
 
     def parse_equate(self, expression, variable):
         if not expression or not variable:
@@ -639,16 +707,16 @@ class StatementEvaluator(object):
                 ).execute()
 
     # This only splits by = and not by ==, >=, <=, etc.
-    def assignment_parser(self, statement):
-        # ignore >=, <=, ==, !=, etc.
-        # Also it could have multiple = in the statement
-        # TODO: Need to fix this for >=, <=, != and ==
-        items = statement.split('=')
-        if len(items) < 2:
-            raise SyntaxError('parse error')
+    # def assignment_parser(self, statement):
+    #     # ignore >=, <=, ==, !=, etc.
+    #     # Also it could have multiple = in the statement
+    #     # TODO: Need to fix this for >=, <=, != and ==
+    #     items = statement.split('=')
+    #     if len(items) < 2:
+    #         raise SyntaxError('parse error')
 
-        for i in items[:-1]:
-            self.parse_equate(items[-1], i)
+    #     for i in items[:-1]:
+    #         self.parse_equate(items[-1], i)
 
     def check_var_name_validity(self, name):
         if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name) is None or all([i == '_' for i in name]) or name in keywords:
