@@ -50,10 +50,9 @@ class Lexer(object):
             elif self.s[self.i].isdigit():
                 self.evaluate_digit()
             elif self.s[self.i:self.i+2] in boolean_symbols:
-                if self.s[self.i] == '!':
-                    self.evaluate_symbol()
-                else:
-                    self.evaluate_boolean_symbol()
+                self.evaluate_boolean_symbol()
+            elif self.s[self.i] == '!':
+                self.evaluate_symbol()
             elif self.s[self.i:self.i+2] in op_equals_symbols:
                 self.evaluate_double_symbol()
             elif self.s[self.i:self.i+2] in double_len_symbols:
@@ -211,7 +210,8 @@ class Parsor(object):
             raise SyntaxError('expected boolean, found EOF')
         
         # lhs, i = self.plus_or_minus(i)
-        lhs, i = self.relational(i)
+        if self.ts[i].val != '!':
+            lhs, i = self.relational(i)
 
         while i< len(self.ts) and self.ts[i].typ == 'sym' and self.ts[i].val in boolean_symbols:
             if self.ts[i].val != '!':
@@ -219,10 +219,10 @@ class Parsor(object):
                 rhs, i = self.relational(i+1)
                 lhs = ast(val, lhs, rhs)
             
-            else:
+            elif self.ts[i].typ == 'sym' and self.ts[i].val == '!':
                 val = self.ts[i].val
-                lhs, i = self.parse_logic(i+1)
-                lhs = ast(val, lhs)
+                a, i = self.parse_logic(i+1)
+                return ast(val, a), i
 
         return lhs, i
 
@@ -436,7 +436,7 @@ class Interpreter(object):
         elif self.a.typ == '<=':
             return self.interp_lte()
         elif self.a.typ == '!':
-            return not self.interp_not()
+            return self.interp_not()
         elif self.a.typ == '&&':
             if self.interp_and() == 0:
                 return 0
