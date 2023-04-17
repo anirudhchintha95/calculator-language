@@ -18,7 +18,7 @@ This project is about bulding a version of bc, a standard calculator used on the
 
 ## Time Spent
 
-We spent approximately 12 hours to complete the project.
+We spent approximately 60 hours collectively to complete the project.
 
 ## Code Testing
 
@@ -43,7 +43,10 @@ There were several small bugs in our program:
 
 ## Extensions
 
-1. Op-Equals
-2. Relational Operations
-3. Boolean Operations
-4. Comments
+1. Op-Equals: This is to evaluate operations like +=,-=, *= etc. whose syntax is x op= e that is same as x = x op (e)
+
+2. Relational Operations: This is to evaluate operations like ==, <=, >=, !=, <, > on numbers for eg. print 5 > 3 so it yields 1(True)
+
+3. Boolean Operations: This is to evaluate logic operations like &&, ||, ! similar to and, or and not of python. eg. 1 && 0 = 0 or !true = 0(false)
+
+4. Comments: This is to ignore the block of code which is under comment blocks. For multi line comment we use /* */ and for single we use #.
