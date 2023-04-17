@@ -108,7 +108,7 @@ class Lexer(object):
                 # If the previous token is a variable, this is a post-sym operator
                 self.tokens.append(token('sym', symbol))
                 self.i += 2
-            elif not self.tokens or self.tokens[-1].typ == 'space':
+            elif not self.tokens or self.tokens[-1].typ == 'space' or self.tokens[-1].val not in ["-", "+", '--', '++']:
                 # If the previous token is a space, we can safely assume the next token is a variable
                 self.tokens.append(token('sym', symbol))
                 self.i += 2
