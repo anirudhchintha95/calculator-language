@@ -616,54 +616,6 @@ class StatementEvaluator(object):
             'value': Parsor(statement).execute()
         })
 
-        # statement = statement.strip().replace(' ', '')
-
-        # if '+=' in statement:
-        #     calculate = statement.split('+=')
-        #     variable = calculate[0]
-        #     expression = f'{variable}+{calculate[1]}'
-        #     self.parse_equate(expression, variable)
-        # elif '-=' in statement:
-        #     calculate = statement.split('-=')
-        #     variable = calculate[0]
-        #     expression = f'{variable}-{calculate[1]}'
-        #     self.parse_equate(expression, variable)
-        # elif '*=' in statement:
-        #     calculate = statement.split('*=')
-        #     variable = calculate[0]
-        #     expression = f'{variable}*{calculate[1]}'
-        #     self.parse_equate(expression, variable)
-        # elif '/=' in statement:
-        #     calculate = statement.split('/=')
-        #     variable = calculate[0]
-        #     expression = f'{variable}/{calculate[1]}'
-        #     self.parse_equate(expression, variable)
-        # elif '%=' in statement:
-        #     calculate = statement.split('%=')
-        #     variable = calculate[0]
-        #     expression = f'{variable}%{calculate[1]}'
-        #     self.parse_equate(expression, variable)
-        # elif '^=' in statement:
-        #     calculate = statement.split('^=')
-        #     variable = calculate[0]
-        #     expression = f'{variable}^{calculate[1]}'
-        #     self.parse_equate(expression, variable)
-        # # TODO: Need to fix this for >= and <=
-        # elif '=' in statement and statement[statement.index('=') - 1] not in ['+', '-', '*', '/', '%', '^', '>', '<']:
-        #     self.assignment_parser(statement)
-        # elif any([i in statement for i in single_len_symbols]) or any([i in statement for i in double_len_symbols]) or all([i.isdigit() or i == '.' for i in statement]):
-        #     self.parsed_statements.append({
-        #         'type': 'eval',
-        #         'value': Parsor(statement).execute()
-        #     })
-        # else:
-        #     self.check_var_name_validity(statement)
-        #     self.parsed_statements.append({
-        #         'type': 'assign',
-        #         'variable': statement,
-        #         'value': Parsor('0').execute()
-        #     })
-
     def parse_equate(self, expression, variable):
         if not expression or not variable:
             raise SyntaxError('parse error')
@@ -705,18 +657,6 @@ class StatementEvaluator(object):
                 Interpreter(
                     statement['value'], self.variables
                 ).execute()
-
-    # This only splits by = and not by ==, >=, <=, etc.
-    # def assignment_parser(self, statement):
-    #     # ignore >=, <=, ==, !=, etc.
-    #     # Also it could have multiple = in the statement
-    #     # TODO: Need to fix this for >=, <=, != and ==
-    #     items = statement.split('=')
-    #     if len(items) < 2:
-    #         raise SyntaxError('parse error')
-
-    #     for i in items[:-1]:
-    #         self.parse_equate(items[-1], i)
 
     def check_var_name_validity(self, name):
         if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name) is None or all([i == '_' for i in name]) or name in keywords:
