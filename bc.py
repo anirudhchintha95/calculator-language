@@ -2,7 +2,6 @@ from typing import Any
 import re
 import sys
 
-
 single_len_symbols = ["-", "+", "*", "/", "%", "^", "(", ")", "<", ">"]
 boolean_symbols = ["&&", "||", "!"]
 double_len_symbols = ["++", "--", "==", "!=", "<=", ">="]
@@ -63,6 +62,13 @@ class Lexer(object):
         return [token for token in self.tokens if token.typ != 'space']
 
     def evaluate_space(self):
+        """
+        >>> lexer = Lexer('3 + 4')
+        >>> lexer.execute()
+        [token('fl', '3'), token('sym', '+'), token('fl', '4')]
+        >>> lexer.tokens
+        [token('fl', '3'), token('space', ' '), token('sym', '+'), token('space', ' '), token('fl', '4')]
+        """
         self.tokens.append(token('space', " "))
         self.i += 1
 
@@ -524,6 +530,10 @@ class StatementEvaluator(object):
         self.parsed_statements.append(parsed_statement)
 
     def evaluate(self):
+        """
+        Doctests for all operators
+        
+        """
         if not self.parsed_statements:
             return
 
@@ -754,6 +764,8 @@ class VariableNameChecker(object):
 
 
 if __name__ == '__main__':
+    import doctest
+    doctest.testmod()
     statements = []
     for line in sys.stdin:
         if line:
