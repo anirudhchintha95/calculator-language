@@ -44,9 +44,22 @@ There were several small bugs in our program:
 ## Extensions
 
 1. Op-Equals: This is to evaluate operations like +=,-=, *= etc. whose syntax is x op= e that is same as x = x op (e)
+eg. 1. print a+=2
+    2. a = 10
+    print a &&= b
+    3. a = 100
+    print a /= 10
 
 2. Relational Operations: This is to evaluate operations like ==, <=, >=, !=, <, > on numbers for eg. print 5 > 3 so it yields 1(True)
+eg. 1. print 5 > 3
+    2. print a >= b
 
 3. Boolean Operations: This is to evaluate logic operations like &&, ||, ! similar to and, or and not of python. eg. 1 && 0 = 0 or !true = 0(false)
+eg. 1. print 1 && 2, 2 && 1, -5 && 1, 0 && -100
 
 4. Comments: This is to ignore the block of code which is under comment blocks. For multi line comment we use /* */ and for single we use #.
+eg. 1. a = 9/* hello      *//*  *//*
+      a = 10
+      a++
+      */0   #0
+      print a + 1
